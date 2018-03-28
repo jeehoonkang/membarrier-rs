@@ -131,22 +131,20 @@ mod linux_membarrier {
     #[repr(i32)]
     #[allow(dead_code, non_camel_case_types)]
     enum membarrier_cmd {
-	      MEMBARRIER_CMD_QUERY					= 0,
-	      MEMBARRIER_CMD_GLOBAL					= (1 << 0),
-	      MEMBARRIER_CMD_GLOBAL_EXPEDITED				= (1 << 1),
-	      MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED		= (1 << 2),
-	      MEMBARRIER_CMD_PRIVATE_EXPEDITED			= (1 << 3),
-	      MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED		= (1 << 4),
-	      MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE		= (1 << 5),
-	      MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE	= (1 << 6),
+        MEMBARRIER_CMD_QUERY = 0,
+        MEMBARRIER_CMD_GLOBAL = (1 << 0),
+        MEMBARRIER_CMD_GLOBAL_EXPEDITED = (1 << 1),
+        MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED = (1 << 2),
+        MEMBARRIER_CMD_PRIVATE_EXPEDITED = (1 << 3),
+        MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED = (1 << 4),
+        MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE = (1 << 5),
+        MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE = (1 << 6),
     }
 
     /// Call the `sys_membarrier` system call.
     #[inline]
     fn membarrier(cmd: membarrier_cmd) -> libc::c_long {
-        unsafe {
-            libc::syscall(libc::SYS_membarrier, cmd as libc::c_int, 0 as libc::c_int)
-        }
+        unsafe { libc::syscall(libc::SYS_membarrier, cmd as libc::c_int, 0 as libc::c_int) }
     }
 
     lazy_static! {
@@ -154,10 +152,10 @@ mod linux_membarrier {
         static ref IS_SUPPORTED: bool = {
             // Queries which membarrier commands are supported. Checks if private expedited
             // membarrier is supported.
-            let query = membarrier(membarrier_cmd::MEMBARRIER_CMD_QUERY);
-            if query < 0 ||
-                query & membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED as libc::c_long == 0 ||
-                query & membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED as libc::c_long == 0
+            let ret = membarrier(membarrier_cmd::MEMBARRIER_CMD_QUERY);
+            if ret < 0 ||
+                ret & membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED as libc::c_long == 0 ||
+                ret & membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED as libc::c_long == 0
             {
                 return false;
             }
