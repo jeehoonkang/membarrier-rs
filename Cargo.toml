@@ -1,0 +1,24 @@
+[package]
+name = "membarrier"
+version = "0.1.0"
+authors = ["Jeehoon Kang <jeehoon.kang@sf.snu.ac.kr>"]
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/jeehoonkang/membarrier-rs"
+homepage = "https://github.com/jeehoonkang/membarrier-rs"
+documentation = "https://docs.rs/membarrier"
+description = "Memory barrier"
+keywords = ["linux", "membarrier"]
+categories = ["memory-management"]
+
+[features]
+default = []
+linux_membarrier = []
+
+[dependencies]
+cfg-if = "0.1"
+lazy_static = "1.0"
+libc = "0.2"
+
+[build-dependencies]
+cc = "1.0"

@@ -1,0 +1,17 @@
+language: rust
+
+os:
+  - linux
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+cache: cargo
+
+script:
+  - cargo test
+  - cargo test --release
+  - cargo test --features linux_membarrier
+  - cargo test --release --features linux_membarrier
