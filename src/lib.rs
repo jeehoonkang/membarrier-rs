@@ -61,17 +61,25 @@ extern crate cfg_if;
 #[allow(unused_imports)]
 #[macro_use]
 extern crate lazy_static;
+extern crate kernel32;
 extern crate libc;
 
 cfg_if! {
-    if #[cfg(not(feature = "linux_membarrier"))] {
-        pub use default::Membarrier;
-    } else {
+    if #[cfg(all(target_os = "linux", feature = "linux_membarrier"))] {
         pub use linux_membarrier::Membarrier;
+    } else if #[cfg(target_os = "windows")] {
+        pub use windows_membarrier::Membarrier;
+    } else {
+        pub use default::Membarrier;
     }
 }
 
-#[cfg(not(feature = "linux_membarrier"))]
+impl Default for Membarrier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 mod default {
     use core::sync::atomic;
 
@@ -114,7 +122,7 @@ mod default {
     }
 }
 
-#[cfg(feature = "linux_membarrier")]
+#[cfg(target_os = "linux")]
 mod linux_membarrier {
     use core::sync::atomic;
     use libc;
@@ -183,8 +191,60 @@ mod linux_membarrier {
     impl Membarrier {
         /// Creates a membarrier manager.
         #[inline]
+        #[allow(dead_code)]
         pub fn new() -> Self {
             assert!(*IS_SUPPORTED, "linux membarrier is not supported");
+            Self {}
+        }
+
+        /// Issues memory barrier for fast path.
+        ///
+        /// It issues compiler fence, which disallows compiler optimizations across itself.
+        #[inline]
+        #[allow(dead_code)]
+        pub fn fast_path(self) {
+            atomic::compiler_fence(atomic::Ordering::SeqCst);
+        }
+
+        /// Issues memory barrier for normal path.
+        ///
+        /// It just issues the memory barrier instruction.
+        #[inline]
+        #[allow(dead_code)]
+        pub fn normal_path(self) {
+            atomic::fence(atomic::Ordering::SeqCst);
+        }
+
+        /// Issues memory barrier for slow path.
+        ///
+        /// It issues private expedited membarrier using the `sys_membarrier()` system call.
+        #[inline]
+        #[allow(dead_code)]
+        pub fn slow_path(self) {
+            if membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED) < 0 {
+                panic!("membarrier(membarrier_cmd_private_expedited) failed");
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows_membarrier {
+    use core::sync::atomic;
+    use kernel32;
+
+    /// The membarrier manager based on Windows's `FlushProcessWriteBuffers()` system call.
+    ///
+    /// For fast path, it issues compiler fence, which is basically zero-cost. For normal path, it
+    /// issues memory barrier instruction. For slow path, it calls the `FlushProcessWriteBuffers()`
+    /// system call.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Membarrier {}
+
+    impl Membarrier {
+        /// Creates a membarrier manager.
+        #[inline]
+        pub fn new() -> Self {
             Self {}
         }
 
@@ -206,12 +266,10 @@ mod linux_membarrier {
 
         /// Issues memory barrier for slow path.
         ///
-        /// It issues private expedited membarrier using the `sys_membarrier()` system call.
+        /// It invokes the `FlushProcessWriteBuffers()` system call.
         #[inline]
         pub fn slow_path(self) {
-            if membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED) < 0 {
-                panic!("membarrier(membarrier_cmd_private_expedited) failed");
-            }
+            kernel32::FlushProcessWriteBuffers();
         }
     }
 }
