@@ -1,17 +1,41 @@
 language: rust
 
-os:
-  - linux
-
-rust:
-  - stable
-  - beta
-  - nightly
+matrix:
+  include:
+    # Linux
+    - rust: stable
+      os: linux
+    - rust: beta
+      os: linux
+    - rust: nightly
+      os: linux
+    # OS X
+    - rust: stable
+      os: osx
+    - rust: beta
+      os: osx
+    - rust: nightly
+      os: osx
+    # Windows MSVC
+    - rust: stable-x86_64-pc-windows-msvc
+      os: windows
+    - rust: beta-x86_64-pc-windows-msvc
+      os: windows
+    - rust: nightly-x86_64-pc-windows-msvc
+      os: windows
+    # Windows GNU
+    - rust: stable-x86_64-pc-windows-gnu
+      os: windows
+    - rust: beta-x86_64-pc-windows-gnu
+      os: windows
+    - rust: nightly-x86_64-pc-windows-gnu
+      os: windows
 
 cache: cargo
 
 script:
   - cargo test
   - cargo test --release
-  - cargo test --features linux_membarrier
-  - cargo test --release --features linux_membarrier
+  # TODO: Travis uses an old kernel that doesn't support `sys_membarrier`.
+  # - cargo test --features linux_membarrier
+  # - cargo test --release --features linux_membarrier
