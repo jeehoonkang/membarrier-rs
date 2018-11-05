@@ -269,7 +269,9 @@ mod windows_membarrier {
         /// It invokes the `FlushProcessWriteBuffers()` system call.
         #[inline]
         pub fn slow_path(self) {
-            kernel32::FlushProcessWriteBuffers();
+            unsafe {
+                kernel32::FlushProcessWriteBuffers();
+            }
         }
     }
 }
