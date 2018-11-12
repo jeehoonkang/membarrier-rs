@@ -275,17 +275,3 @@ mod windows_membarrier {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fences() {
-        let membarrier = Membarrier::new();
-
-        membarrier.fast_path();
-        membarrier.normal_path();
-        membarrier.slow_path();
-    }
-}
