@@ -36,6 +36,5 @@ cache: cargo
 script:
   - cargo test
   - cargo test --release
-  # TODO: Travis uses an old kernel that doesn't support `sys_membarrier`.
-  # - cargo test --features linux_membarrier
-  # - cargo test --release --features linux_membarrier
+  - cargo test --features linux_membarrier
+  - cargo test --release --features linux_membarrier
