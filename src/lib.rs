@@ -80,6 +80,17 @@ impl Default for Membarrier {
     }
 }
 
+macro_rules! fatal_assert {
+    ($cond:expr) => {
+        if !$cond {
+            #[allow(unused_unsafe)]
+            unsafe {
+                libc::abort();
+            }
+        }
+    };
+}
+
 mod default {
     use core::sync::atomic;
 
@@ -124,6 +135,9 @@ mod default {
 
 #[cfg(target_os = "linux")]
 mod linux_membarrier {
+    use core::cell::UnsafeCell;
+    use core::mem;
+    use core::ptr;
     use core::sync::atomic;
     use libc;
 
@@ -157,7 +171,7 @@ mod linux_membarrier {
 
     lazy_static! {
         /// Represents whether the `sys_membarrier` system call is supported.
-        static ref IS_SUPPORTED: bool = {
+        static ref MEMBARRIER_IS_SUPPORTED: bool = {
             // Queries which membarrier commands are supported. Checks if private expedited
             // membarrier is supported.
             let ret = membarrier(membarrier_cmd::MEMBARRIER_CMD_QUERY);
@@ -177,6 +191,90 @@ mod linux_membarrier {
         };
     }
 
+    struct MprotectBarrier {
+        lock: UnsafeCell<libc::pthread_mutex_t>,
+        page: *mut libc::c_void,
+        page_size: libc::size_t,
+    }
+
+    unsafe impl Sync for MprotectBarrier {}
+
+    impl MprotectBarrier {
+        /// Issues a process-wide barrier.
+        #[inline]
+        fn barrier(&self) {
+            unsafe {
+                // Lock the mutex.
+                fatal_assert!(libc::pthread_mutex_lock(self.lock.get()) == 0);
+
+                // Set the page access protections to read + write.
+                fatal_assert!(
+                    libc::mprotect(
+                        self.page,
+                        self.page_size,
+                        libc::PROT_READ | libc::PROT_WRITE,
+                    ) == 0
+                );
+
+                // Ensure that the page is dirty before we change the protection so that we prevent
+                // the OS from skipping the global TLB flush.
+                let atomic_usize = &*(self.page as *const atomic::AtomicUsize);
+                atomic_usize.fetch_add(1, atomic::Ordering::SeqCst);
+
+                // Set the page access protections to none.
+                //
+                // Changing a page protection from read + write to none causes the OS to issue an
+                // interrupt to flush TLBs on all processors. This also results in flushing the
+                // processor buffers.
+                fatal_assert!(libc::mprotect(self.page, self.page_size, libc::PROT_NONE) == 0);
+
+                // Unlock the mutex.
+                fatal_assert!(libc::pthread_mutex_unlock(self.lock.get()) == 0);
+            }
+        }
+    }
+
+    lazy_static! {
+        /// An alternative solution to `sys_membarrier` that works on older Linux kernels.
+        static ref MPROTECT_BARRIER: MprotectBarrier = {
+            unsafe {
+                // Find out the page size on the current system.
+                let page_size = libc::sysconf(libc::_SC_PAGESIZE);
+                fatal_assert!(page_size > 0);
+                let page_size = page_size as libc::size_t;
+
+                // Create a dummy page.
+                let page = libc::mmap(
+                    ptr::null_mut(),
+                    page_size,
+                    libc::PROT_NONE,
+                    libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                    -1 as libc::c_int,
+                    0 as libc::off_t,
+                );
+                fatal_assert!(page != libc::MAP_FAILED);
+                fatal_assert!(page as libc::size_t % page_size == 0);
+
+                // Locking the page ensures that it stays in memory during the two mprotect calls
+                // in `MprotectBarrier::barrier()`. If the page was unmapped between those calls,
+                // they would not have the expected effect of generating IPI.
+                libc::mlock(page, page_size as libc::size_t);
+
+                // Initialize the mutex.
+                let lock = UnsafeCell::new(libc::PTHREAD_MUTEX_INITIALIZER);
+                let mut attr: libc::pthread_mutexattr_t = mem::uninitialized();
+                fatal_assert!(libc::pthread_mutexattr_init(&mut attr) == 0);
+                fatal_assert!(
+                    libc::pthread_mutexattr_settype(&mut attr, libc::PTHREAD_MUTEX_NORMAL) == 0
+                );
+                fatal_assert!(libc::pthread_mutex_init(lock.get(), &attr) == 0);
+                fatal_assert!(libc::pthread_mutexattr_destroy(&mut attr) == 0);
+
+                MprotectBarrier { lock, page, page_size }
+            }
+        };
+    }
+
     /// The membarrier manager based on Linux's `sys_membarrier()` system call.
     ///
     /// Its existence guarantees that it is ready to call private expedited membarrier in the
@@ -185,6 +283,10 @@ mod linux_membarrier {
     /// For fast path, it issues compiler fence, which is basically zero-cost. For normal path, it
     /// issues memory barrier instruction. For slow path, it calls the `sys_membarrier()` system
     /// call.
+    ///
+    /// If `sys_membarrier()` is not supported, then process-wide memory barriers will be issued by
+    /// changing access protections of a single mmap-ed page. This method is not as fast as the
+    /// `sys_membarrier()` call, but works very similarly.
     #[derive(Debug, Clone, Copy)]
     pub struct Membarrier {}
 
@@ -193,7 +295,6 @@ mod linux_membarrier {
         #[inline]
         #[allow(dead_code)]
         pub fn new() -> Self {
-            assert!(*IS_SUPPORTED, "linux membarrier is not supported");
             Self {}
         }
 
@@ -221,8 +322,10 @@ mod linux_membarrier {
         #[inline]
         #[allow(dead_code)]
         pub fn slow_path(self) {
-            if membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED) < 0 {
-                panic!("membarrier(membarrier_cmd_private_expedited) failed");
+            if *MEMBARRIER_IS_SUPPORTED {
+                fatal_assert!(membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED) >= 0);
+            } else {
+                MPROTECT_BARRIER.barrier();
             }
         }
     }
