@@ -54,8 +54,8 @@
 //! `membarrier`](http://man7.org/linux/man-pages/man2/membarrier.2.html).
 
 #![warn(missing_docs, missing_debug_implementations)]
+#![no_std]
 
-extern crate core;
 #[macro_use]
 extern crate cfg_if;
 #[allow(unused_imports)]
