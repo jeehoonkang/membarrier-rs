@@ -1,11 +1,11 @@
-//! Library for memory barrier.
+//! Process-wide memory barrier.
 //!
 //! Memory barrier is one of the strongest synchronization primitives in modern relaxed-memory
 //! concurrency. In relaxed-memory concurrency, two threads may have different viewpoint on the
-//! underlying memory system, e.g. thread T1 may have recognized a value V, while T2 does not know
-//! of V at all. This discrepancy is one of the main reasons why concurrent programming is
-//! hard. Memory barrier synchronizes threads in such a way that after memory barriers, threads have
-//! the same viewpoint on the underlying memory system.
+//! underlying memory system, e.g. thread T1 may have recognized a value V at location X, while T2
+//! does not know of X=V at all. This discrepancy is one of the main reasons why concurrent
+//! programming is hard. Memory barrier synchronizes threads in such a way that after memory
+//! barriers, threads have the same viewpoint on the underlying memory system.
 //!
 //! Unfortunately, memory barrier is not cheap. Usually, in modern computer systems, there's a
 //! designated memory barrier instruction, e.g. `MFENCE` in x86 and `DMB SY` in ARM, and they may
@@ -14,39 +14,45 @@
 //! the lifetime of a long process. However, sometimes memory barrier is necessary in a fast path,
 //! which significantly degrades the performance.
 //!
-//! In order to reduce the synchronization cost of memory barrier, Linux recently introduced the
-//! `sys_membarrier()` system call. Essentially, it performs memory barrier for every thread, and
-//! it's even slower than the ordinary memory barrier instruction. Then what's the benefit? At the
-//! cost of `sys_membarrier()`, other threads may be exempted form issuing a memory barrier
-//! instruction! In other words, by using `sys_membarrier()`, you can optimize fast path at the
-//! performance cost of slow path.
+//! In order to reduce the synchronization cost of memory barrier, Linux and Windows provides
+//! *process-wide memory barrier*, which basically performs memory barrier for every thread in the
+//! process. Provided that it's even slower than the ordinary memory barrier instruction, what's the
+//! benefit? At the cost of process-wide memory barrier, other threads may be exempted form issuing
+//! a memory barrier instruction at all! In other words, by using process-wide memory barrier, you
+//! can optimize fast path at the performance cost of slow path.
+//!
+//! This crate provides an abstraction of process-wide memory barrier over different operating
+//! systems and hardware. It is implemented as follows. For recent Linux systems, we use the
+//! `sys_membarrier()` system call; and for those old Linux systems without support for
+//! `sys_membarrier()`, we fall back to the `mprotect()` system call that is known to provide
+//! process-wide memory barrier semantics. For Windows, we use the `FlushProcessWriteBuffers()`
+//! API. For all the other systems, we fall back to the normal `SeqCst` fence for both fast and slow
+//! paths.
+//!
 //!
 //! # Usage
-//!
-//! By default, we fall back to memory barrier instruction. Turn on the `linux_membarrier` feature
-//! for using the private expedited membarrier in Linux 4.14 or later.
 //!
 //! Use this crate as follows:
 //!
 //! ```
 //! extern crate membarrier;
+//! use std::sync::atomic::{fence, Ordering};
 //!
-//! let membarrier = membarrier::Membarrier::new();
-//! membarrier.fast_path();
-//! membarrier.normal_path();
-//! membarrier.slow_path();
+//! membarrier::light();     // light-weight barrier
+//! membarrier::heavy();     // heavy-weight barrier
+//! fence(Ordering::SeqCst); // normal barrier
 //! ```
 //!
 //! # Semantics
 //!
-//! Formally, there are three kinds of memory barrier: ones for fast path, normal path, and slow
-//! path. In an execution of a program, there is a total order over all instances of memory
-//! barrier. If thread A issues barrier X and thread B issues barrier Y and X is ordered before Y,
-//! then A's knowledge on the underlying memory system at the time of X is transferred to B after Y,
-//! if:
+//! Formally, there are three kinds of memory barrier: light one (`membarrier::light()`), heavy one
+//! (`membarrier::heavy()`), and the normal one (`fence(Ordering::SeqCst)`). In an execution of a
+//! program, there is a total order over all instances of memory barrier. If thread A issues barrier
+//! X and thread B issues barrier Y and X is ordered before Y, then A's knowledge on the underlying
+//! memory system at the time of X is transferred to B after Y, provided that:
 //!
-//! - Either A's or B's barrier is for slow path; or
-//! - Both A's and B's barriers are for normal path or for slow path.
+//! - Either of A's or B's barrier is heavy; or
+//! - Both of A's and B's barriers are normal.
 //!
 //! # Reference
 //!
@@ -64,22 +70,6 @@ extern crate lazy_static;
 extern crate kernel32;
 extern crate libc;
 
-cfg_if! {
-    if #[cfg(all(target_os = "linux", feature = "linux_membarrier"))] {
-        pub use linux_membarrier::Membarrier;
-    } else if #[cfg(target_os = "windows")] {
-        pub use windows_membarrier::Membarrier;
-    } else {
-        pub use default::Membarrier;
-    }
-}
-
-impl Default for Membarrier {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 macro_rules! fatal_assert {
     ($cond:expr) => {
         if !$cond {
@@ -91,50 +81,39 @@ macro_rules! fatal_assert {
     };
 }
 
+cfg_if! {
+    if #[cfg(all(target_os = "linux"))] {
+        pub use linux::*;
+    } else if #[cfg(target_os = "windows")] {
+        pub use windows::*;
+    } else {
+        pub use default::*;
+    }
+}
+
+#[allow(dead_code)]
 mod default {
-    use core::sync::atomic;
+    use core::sync::atomic::{fence, Ordering};
 
-    /// The default membarrier manager.
+    /// Issues a light memory barrier for fast path.
     ///
-    /// It issues memory barrier instruction for fast, normal, and slow path.
-    #[derive(Debug, Clone, Copy)]
-    pub struct Membarrier {}
+    /// It just issues the normal memory barrier instruction.
+    #[inline]
+    pub fn light() {
+        fence(Ordering::SeqCst);
+    }
 
-    impl Membarrier {
-        /// Creates a membarrier manager.
-        #[inline]
-        pub fn new() -> Self {
-            Self {}
-        }
-
-        /// Issues memory barrier for fast path.
-        ///
-        /// It just issues the memory barrier instruction.
-        #[inline]
-        pub fn fast_path(self) {
-            atomic::fence(atomic::Ordering::SeqCst);
-        }
-
-        /// Issues memory barrier for normal path.
-        ///
-        /// It just issues the memory barrier instruction.
-        #[inline]
-        pub fn normal_path(self) {
-            atomic::fence(atomic::Ordering::SeqCst);
-        }
-
-        /// Issues memory barrier for slow path.
-        ///
-        /// It just issues the memory barrier instruction.
-        #[inline]
-        pub fn slow_path(self) {
-            atomic::fence(atomic::Ordering::SeqCst);
-        }
+    /// Issues a heavy memory barrier for slow path.
+    ///
+    /// It just issues the normal memory barrier instruction.
+    #[inline]
+    pub fn heavy() {
+        fence(Ordering::SeqCst);
     }
 }
 
 #[cfg(target_os = "linux")]
-mod linux_membarrier {
+mod linux {
     use core::cell::UnsafeCell;
     use core::mem;
     use core::ptr;
@@ -146,7 +125,7 @@ mod linux_membarrier {
     /// # Caveat
     ///
     /// We're defining it here because, unfortunately, the `libc` crate currently doesn't expose
-    /// `membarrier_cm` for us. You can find the numbers in the [Linux source
+    /// `membarrier_cmd` for us. You can find the numbers in the [Linux source
     /// code](https://github.com/torvalds/linux/blob/master/include/uapi/linux/membarrier.h).
     ///
     /// This enum should really be `#[repr(libc::c_int)]`, but Rust currently doesn't allow it.
@@ -165,7 +144,7 @@ mod linux_membarrier {
 
     /// Call the `sys_membarrier` system call.
     #[inline]
-    fn membarrier(cmd: membarrier_cmd) -> libc::c_long {
+    fn sys_membarrier(cmd: membarrier_cmd) -> libc::c_long {
         unsafe { libc::syscall(libc::SYS_membarrier, cmd as libc::c_int, 0 as libc::c_int) }
     }
 
@@ -174,7 +153,7 @@ mod linux_membarrier {
         static ref MEMBARRIER_IS_SUPPORTED: bool = {
             // Queries which membarrier commands are supported. Checks if private expedited
             // membarrier is supported.
-            let ret = membarrier(membarrier_cmd::MEMBARRIER_CMD_QUERY);
+            let ret = sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_QUERY);
             if ret < 0 ||
                 ret & membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED as libc::c_long == 0 ||
                 ret & membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED as libc::c_long == 0
@@ -183,7 +162,7 @@ mod linux_membarrier {
             }
 
             // Registers the current process as a user of private expedited membarrier.
-            if membarrier(membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED) < 0 {
+            if sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED) < 0 {
                 return false;
             }
 
@@ -200,7 +179,9 @@ mod linux_membarrier {
     unsafe impl Sync for MprotectBarrier {}
 
     impl MprotectBarrier {
-        /// Issues a process-wide barrier.
+        /// Issues a process-wide barrier by changing access protections of a single mmap-ed
+        /// page. This method is not as fast as the `sys_membarrier()` call, but works very
+        /// similarly.
         #[inline]
         fn barrier(&self) {
             unsafe {
@@ -275,106 +256,54 @@ mod linux_membarrier {
         };
     }
 
-    /// The membarrier manager based on Linux's `sys_membarrier()` system call.
+    /// Issues a light memory barrier for fast path.
     ///
-    /// Its existence guarantees that it is ready to call private expedited membarrier in the
-    /// current process.
+    /// It issues a compiler fence, which disallows compiler optimizations across itself. It incurs
+    /// basically no costs in run-time.
+    #[inline]
+    #[allow(dead_code)]
+    pub fn light() {
+        atomic::compiler_fence(atomic::Ordering::SeqCst);
+    }
+
+    /// Issues a heavy memory barrier for slow path.
     ///
-    /// For fast path, it issues compiler fence, which is basically zero-cost. For normal path, it
-    /// issues memory barrier instruction. For slow path, it calls the `sys_membarrier()` system
-    /// call.
-    ///
-    /// If `sys_membarrier()` is not supported, then process-wide memory barriers will be issued by
-    /// changing access protections of a single mmap-ed page. This method is not as fast as the
-    /// `sys_membarrier()` call, but works very similarly.
-    #[derive(Debug, Clone, Copy)]
-    pub struct Membarrier {}
-
-    impl Membarrier {
-        /// Creates a membarrier manager.
-        #[inline]
-        #[allow(dead_code)]
-        pub fn new() -> Self {
-            Self {}
-        }
-
-        /// Issues memory barrier for fast path.
-        ///
-        /// It issues compiler fence, which disallows compiler optimizations across itself.
-        #[inline]
-        #[allow(dead_code)]
-        pub fn fast_path(self) {
-            atomic::compiler_fence(atomic::Ordering::SeqCst);
-        }
-
-        /// Issues memory barrier for normal path.
-        ///
-        /// It just issues the memory barrier instruction.
-        #[inline]
-        #[allow(dead_code)]
-        pub fn normal_path(self) {
-            atomic::fence(atomic::Ordering::SeqCst);
-        }
-
-        /// Issues memory barrier for slow path.
-        ///
-        /// It issues private expedited membarrier using the `sys_membarrier()` system call.
-        #[inline]
-        #[allow(dead_code)]
-        pub fn slow_path(self) {
-            if *MEMBARRIER_IS_SUPPORTED {
-                fatal_assert!(membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED) >= 0);
-            } else {
-                MPROTECT_BARRIER.barrier();
-            }
+    /// It issues a private expedited membarrier using the `sys_membarrier()` system call, if
+    /// supported; otherwise, it falls back to `mprotect()`-based process-wide memory barrier.
+    #[inline]
+    #[allow(dead_code)]
+    pub fn heavy() {
+        if *MEMBARRIER_IS_SUPPORTED {
+            // It's ready to call private expedited membarrier in the current process.
+            fatal_assert!(sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED) >= 0);
+        } else {
+            // `sys_membarrier()` is not supported. Falls back to `mprotect()`-based process-wide
+            // memory barrier.
+            MPROTECT_BARRIER.barrier();
         }
     }
 }
 
 #[cfg(target_os = "windows")]
-mod windows_membarrier {
+mod windows {
     use core::sync::atomic;
     use kernel32;
 
-    /// The membarrier manager based on Windows's `FlushProcessWriteBuffers()` system call.
+    /// Issues light memory barrier for fast path.
     ///
-    /// For fast path, it issues compiler fence, which is basically zero-cost. For normal path, it
-    /// issues memory barrier instruction. For slow path, it calls the `FlushProcessWriteBuffers()`
-    /// system call.
-    #[derive(Debug, Clone, Copy)]
-    pub struct Membarrier {}
+    /// It issues compiler fence, which disallows compiler optimizations across itself.
+    #[inline]
+    pub fn light() {
+        atomic::compiler_fence(atomic::Ordering::SeqCst);
+    }
 
-    impl Membarrier {
-        /// Creates a membarrier manager.
-        #[inline]
-        pub fn new() -> Self {
-            Self {}
-        }
-
-        /// Issues memory barrier for fast path.
-        ///
-        /// It issues compiler fence, which disallows compiler optimizations across itself.
-        #[inline]
-        pub fn fast_path(self) {
-            atomic::compiler_fence(atomic::Ordering::SeqCst);
-        }
-
-        /// Issues memory barrier for normal path.
-        ///
-        /// It just issues the memory barrier instruction.
-        #[inline]
-        pub fn normal_path(self) {
-            atomic::fence(atomic::Ordering::SeqCst);
-        }
-
-        /// Issues memory barrier for slow path.
-        ///
-        /// It invokes the `FlushProcessWriteBuffers()` system call.
-        #[inline]
-        pub fn slow_path(self) {
-            unsafe {
-                kernel32::FlushProcessWriteBuffers();
-            }
+    /// Issues heavy memory barrier for slow path.
+    ///
+    /// It invokes the `FlushProcessWriteBuffers()` system call.
+    #[inline]
+    pub fn heavy() {
+        unsafe {
+            kernel32::FlushProcessWriteBuffers();
         }
     }
 }

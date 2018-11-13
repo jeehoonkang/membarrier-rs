@@ -1,12 +1,12 @@
+#![no_std]
+
 extern crate membarrier;
 
-use membarrier::Membarrier;
+use core::sync::atomic::{fence, Ordering};
 
 #[test]
 fn fences() {
-    let membarrier = Membarrier::new();
-
-    membarrier.fast_path();
-    membarrier.normal_path();
-    membarrier.slow_path();
+    membarrier::light();     // light-weight barrier
+    fence(Ordering::SeqCst); // normal barrier
+    membarrier::heavy();     // heavy-weight barrier
 }
