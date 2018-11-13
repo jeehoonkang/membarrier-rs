@@ -11,10 +11,6 @@ description = "Memory barrier"
 keywords = ["linux", "membarrier"]
 categories = ["memory-management"]
 
-[features]
-default = []
-linux_membarrier = []
-
 [dependencies]
 cfg-if = "0.1"
 lazy_static = "1.0"

@@ -1,31 +1,28 @@
 #![feature(test)]
 
-extern crate membarrier;
 extern crate test;
+extern crate membarrier;
 
-use membarrier::Membarrier;
 use test::Bencher;
+use std::sync::atomic::{fence, Ordering};
 
 #[bench]
-fn fast_path(b: &mut Bencher) {
-    let membarrier = Membarrier::new();
+fn light(b: &mut Bencher) {
     b.iter(|| {
-        membarrier.fast_path();
+        membarrier::light();
     });
 }
 
 #[bench]
-fn normal_path(b: &mut Bencher) {
-    let membarrier = Membarrier::new();
+fn normal(b: &mut Bencher) {
     b.iter(|| {
-        membarrier.normal_path();
+        fence(Ordering::SeqCst);
     });
 }
 
 #[bench]
-fn slow_path(b: &mut Bencher) {
-    let membarrier = Membarrier::new();
+fn heavy(b: &mut Bencher) {
     b.iter(|| {
-        membarrier.slow_path();
+        membarrier::heavy();
     });
 }
