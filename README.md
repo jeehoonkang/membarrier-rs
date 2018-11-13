@@ -33,30 +33,27 @@ process-wide memory barrier semantics. Windows provides `FlushProcessWriteBuffer
 
 ## Usage
 
-By default, we fall back to memory barrier instruction. Turn on the `linux_membarrier` feature
-for using the private expedited membarrier in Linux 4.14 or later.
-
 Use this crate as follows:
 
 ```rust
 extern crate membarrier;
+use std::sync::atomic::{fence, Ordering};
 
-let membarrier = membarrier::Membarrier::new();
-membarrier.fast_path();
-membarrier.normal_path();
-membarrier.slow_path();
+membarrier::light();     // light-weight barrier
+membarrier::heavy();     // heavy-weight barrier
+fence(Ordering::SeqCst); // normal barrier
 ```
 
 ## Semantics
 
-Formally, there are three kinds of memory barrier: ones for fast path, normal path, and slow
-path. In an execution of a program, there is a total order over all instances of memory
-barrier. If thread A issues barrier X and thread B issues barrier Y and X is ordered before Y,
-then A's knowledge on the underlying memory system at the time of X is transferred to B after Y,
-if:
+Formally, there are three kinds of memory barrier: light one (`membarrier::light()`), heavy one
+(`membarrier::heavy()`), and the normal one (`fence(Ordering::SeqCst)`). In an execution of a
+program, there is a total order over all instances of memory barrier. If thread A issues barrier X
+and thread B issues barrier Y and X is ordered before Y, then A's knowledge on the underlying memory
+system at the time of X is transferred to B after Y, provided that:
 
-- Either A's or B's barrier is for slow path; or
-- Both A's and B's barriers are for normal path or for slow path.
+- Either of A's or B's barrier is heavy; or
+- Both of A's and B's barriers are normal.
 
 ## Reference
 

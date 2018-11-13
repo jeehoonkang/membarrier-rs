@@ -1,6 +1,6 @@
 [package]
 name = "membarrier"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Jeehoon Kang <jeehoon.kang@sf.snu.ac.kr>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
@@ -8,7 +8,7 @@ repository = "https://github.com/jeehoonkang/membarrier-rs"
 homepage = "https://github.com/jeehoonkang/membarrier-rs"
 documentation = "https://docs.rs/membarrier"
 description = "Memory barrier"
-keywords = ["linux", "membarrier"]
+keywords = ["process-wide memory barrier", "membarrier", "FlushProcessWriteBuffers"]
 categories = ["memory-management"]
 
 [dependencies]

@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## 0.2.0 - 2018-11-14
+### Added
+- Add support for `no_std`.
+- Add Support for Windows.
+- Add test for Windows and OS X.
+- Add benchmark.
+- Implement a fallback for old Linux systems.
+
+### Changed
+- Change the API in a backward-incompatible manner.
+
+### Removed
+- Remove the memory barrier normal path. Use `fence(Ordering::SeqCst)` instead.
+
 ## 0.1.0 - 2018-03-29
 ### Added
 - First version of membarrier-rs.
