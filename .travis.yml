@@ -36,5 +36,3 @@ cache: cargo
 script:
   - cargo test
   - cargo test --release
-  - cargo test --features linux_membarrier
-  - cargo test --release --features linux_membarrier
