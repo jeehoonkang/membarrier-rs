@@ -70,6 +70,7 @@ extern crate lazy_static;
 extern crate kernel32;
 extern crate libc;
 
+#[allow(unused_macros)]
 macro_rules! fatal_assert {
     ($cond:expr) => {
         if !$cond {
