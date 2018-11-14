@@ -7,8 +7,8 @@ readme = "README.md"
 repository = "https://github.com/jeehoonkang/membarrier-rs"
 homepage = "https://github.com/jeehoonkang/membarrier-rs"
 documentation = "https://docs.rs/membarrier"
-description = "Memory barrier"
-keywords = ["process-wide memory barrier", "barrier", "sys_membarrier", "FlushProcessWriteBuffers", "rcu"]
+description = "Process-wide memory barrier"
+keywords = ["memory-barrier", "barrier", "sys_membarrier", "rcu"]
 categories = ["memory-management", "concurrency", "os", "no_std"]
 
 [dependencies]
