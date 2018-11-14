@@ -1,6 +1,16 @@
 language: rust
 
+cache: cargo
+
+branches:
+  only:
+    - master
+    - staging
+    - trying
+
 matrix:
+  fast_finish: true
+
   include:
     # Linux
     - rust: stable
@@ -30,8 +40,6 @@ matrix:
       os: windows
     - rust: nightly-x86_64-pc-windows-gnu
       os: windows
-
-cache: cargo
 
 script:
   - cargo test
