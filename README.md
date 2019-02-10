@@ -22,14 +22,13 @@ which significantly degrades the performance.
 In order to reduce the synchronization cost of memory barrier, Linux and Windows provides
 *process-wide memory barrier*, which basically performs memory barrier for every thread in the
 process. Provided that it's even slower than the ordinary memory barrier instruction, what's the
-benefit? At the cost of process-wide memory barrier, other threads may be exempted form issuing a
+benefit? At the cost of process-wide memory barrier, other threads may be exempted from issuing a
 memory barrier instruction at all! In other words, by using process-wide memory barrier, you can
 optimize fast path at the performance cost of slow path.
 
 For process-wide memory barrier, Linux recently introduced the `sys_membarrier()` system call, but
 it's known that in older Linux, the `mprotect()` system call with appropriate arguments provides
 process-wide memory barrier semantics. Windows provides `FlushProcessWriteBuffers()` API.
-
 
 ## Usage
 
