@@ -211,6 +211,7 @@ mod linux {
         }
 
         unsafe impl Sync for Barrier {}
+        unsafe impl Send for Barrier {}
 
         impl Barrier {
             /// Issues a process-wide barrier by changing access protections of a single mmap-ed
