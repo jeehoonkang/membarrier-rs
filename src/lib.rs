@@ -336,6 +336,36 @@ mod linux {
             Fallback => atomic::fence(atomic::Ordering::SeqCst),
         }
     }
+
+    /// Issues a light memory barrier for fast path using membarrier.
+    ///
+    /// It issues a compiler fence, which disallows compiler optimizations across itself. It incurs
+    /// basically no costs in run-time.
+    #[inline]
+    #[allow(dead_code)]
+    pub fn init_membarrier() {
+        fatal_assert!(membarrier::is_supported());
+    }
+
+    /// Issues a light memory barrier for fast path using membarrier.
+    ///
+    /// It issues a compiler fence, which disallows compiler optimizations across itself. It incurs
+    /// basically no costs in run-time.
+    #[inline]
+    #[allow(dead_code)]
+    pub fn light_membarrier() {
+        atomic::compiler_fence(atomic::Ordering::SeqCst);
+    }
+
+    /// Issues a heavy memory barrier for slow path using membarrier.
+    ///
+    /// It issues a private expedited membarrier using the `sys_membarrier()` system call, if
+    /// supported; otherwise, it falls back to `mprotect()`-based process-wide memory barrier.
+    #[inline]
+    #[allow(dead_code)]
+    pub unsafe fn heavy_membarrier() {
+        membarrier::barrier();
+    }
 }
 
 #[cfg(target_os = "windows")]
