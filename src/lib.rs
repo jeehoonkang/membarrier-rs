@@ -176,14 +176,14 @@ mod linux {
             // membarrier is supported.
             let ret = sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_QUERY);
             if ret < 0 ||
-                ret & membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED as libc::c_long == 0 ||
-                ret & membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED as libc::c_long == 0
+                ret & membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE as libc::c_long == 0 ||
+                ret & membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE as libc::c_long == 0
             {
                 return false;
             }
 
             // Registers the current process as a user of private expedited membarrier.
-            if sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED) < 0 {
+            if sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE) < 0 {
                 return false;
             }
 
@@ -193,7 +193,7 @@ mod linux {
         /// Executes a heavy `sys_membarrier`-based barrier.
         #[inline]
         pub fn barrier() {
-            fatal_assert!(sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED) >= 0);
+            fatal_assert!(sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE) >= 0);
         }
     }
 
