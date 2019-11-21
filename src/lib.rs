@@ -381,6 +381,11 @@ mod windows {
         atomic::compiler_fence(atomic::Ordering::SeqCst);
     }
 
+    #[inline]
+    pub fn light_membarrier() {
+        light();
+    }
+
     /// Issues heavy memory barrier for slow path.
     ///
     /// It invokes the `FlushProcessWriteBuffers()` system call.
@@ -389,5 +394,10 @@ mod windows {
         unsafe {
             kernel32::FlushProcessWriteBuffers();
         }
+    }
+
+    #[inline]
+    pub fn heavy_membarrier() {
+        heavy();
     }
 }
