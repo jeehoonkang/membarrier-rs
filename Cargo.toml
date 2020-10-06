@@ -1,6 +1,6 @@
 [package]
 name = "membarrier"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Jeehoon Kang <jeehoon.kang@sf.snu.ac.kr>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
