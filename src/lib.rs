@@ -199,7 +199,7 @@ mod linux {
 
     mod mprotect {
         use core::cell::UnsafeCell;
-        use core::mem;
+        use core::mem::MaybeUninit;
         use core::ptr;
         use core::sync::atomic;
         use libc;
@@ -279,8 +279,9 @@ mod linux {
 
                     // Initialize the mutex.
                     let lock = UnsafeCell::new(libc::PTHREAD_MUTEX_INITIALIZER);
-                    let mut attr: libc::pthread_mutexattr_t = mem::uninitialized();
-                    fatal_assert!(libc::pthread_mutexattr_init(&mut attr) == 0);
+                    let mut attr: MaybeUninit<libc::pthread_mutexattr_t> = MaybeUninit::uninit();
+                    fatal_assert!(libc::pthread_mutexattr_init(attr.as_mut_ptr()) == 0);
+                    let mut attr = attr.assume_init();
                     fatal_assert!(
                         libc::pthread_mutexattr_settype(&mut attr, libc::PTHREAD_MUTEX_NORMAL) == 0
                     );
