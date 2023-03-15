@@ -67,8 +67,8 @@ extern crate cfg_if;
 #[allow(unused_imports)]
 #[macro_use]
 extern crate lazy_static;
-extern crate kernel32;
 extern crate libc;
+extern crate windows_sys;
 
 #[allow(unused_macros)]
 macro_rules! fatal_assert {
@@ -175,9 +175,10 @@ mod linux {
             // Queries which membarrier commands are supported. Checks if private expedited
             // membarrier is supported.
             let ret = sys_membarrier(membarrier_cmd::MEMBARRIER_CMD_QUERY);
-            if ret < 0 ||
-                ret & membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED as libc::c_long == 0 ||
-                ret & membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED as libc::c_long == 0
+            if ret < 0
+                || ret & membarrier_cmd::MEMBARRIER_CMD_PRIVATE_EXPEDITED as libc::c_long == 0
+                || ret & membarrier_cmd::MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED as libc::c_long
+                    == 0
             {
                 return false;
             }
@@ -198,15 +199,12 @@ mod linux {
     }
 
     mod mprotect {
-        use core::cell::UnsafeCell;
-        use core::mem;
-        use core::ptr;
-        use core::sync::atomic;
+        use core::{cell::UnsafeCell, mem::MaybeUninit, ptr, sync::atomic};
         use libc;
 
         struct Barrier {
             lock: UnsafeCell<libc::pthread_mutex_t>,
-            page: *mut libc::c_void,
+            page: u64,
             page_size: libc::size_t,
         }
 
@@ -218,22 +216,21 @@ mod linux {
             /// similarly.
             #[inline]
             fn barrier(&self) {
+                let page = self.page as *mut libc::c_void;
+
                 unsafe {
                     // Lock the mutex.
                     fatal_assert!(libc::pthread_mutex_lock(self.lock.get()) == 0);
 
                     // Set the page access protections to read + write.
                     fatal_assert!(
-                        libc::mprotect(
-                            self.page,
-                            self.page_size,
-                            libc::PROT_READ | libc::PROT_WRITE,
-                        ) == 0
+                        libc::mprotect(page, self.page_size, libc::PROT_READ | libc::PROT_WRITE,)
+                            == 0
                     );
 
                     // Ensure that the page is dirty before we change the protection so that we
                     // prevent the OS from skipping the global TLB flush.
-                    let atomic_usize = &*(self.page as *const atomic::AtomicUsize);
+                    let atomic_usize = &*(page as *const atomic::AtomicUsize);
                     atomic_usize.fetch_add(1, atomic::Ordering::SeqCst);
 
                     // Set the page access protections to none.
@@ -241,7 +238,7 @@ mod linux {
                     // Changing a page protection from read + write to none causes the OS to issue
                     // an interrupt to flush TLBs on all processors. This also results in flushing
                     // the processor buffers.
-                    fatal_assert!(libc::mprotect(self.page, self.page_size, libc::PROT_NONE) == 0);
+                    fatal_assert!(libc::mprotect(page, self.page_size, libc::PROT_NONE) == 0);
 
                     // Unlock the mutex.
                     fatal_assert!(libc::pthread_mutex_unlock(self.lock.get()) == 0);
@@ -278,13 +275,16 @@ mod linux {
 
                     // Initialize the mutex.
                     let lock = UnsafeCell::new(libc::PTHREAD_MUTEX_INITIALIZER);
-                    let mut attr: libc::pthread_mutexattr_t = mem::uninitialized();
-                    fatal_assert!(libc::pthread_mutexattr_init(&mut attr) == 0);
+                    let mut attr = MaybeUninit::<libc::pthread_mutexattr_t>::uninit();
+                    fatal_assert!(libc::pthread_mutexattr_init(attr.as_mut_ptr()) == 0);
+                    let mut attr = attr.assume_init();
                     fatal_assert!(
                         libc::pthread_mutexattr_settype(&mut attr, libc::PTHREAD_MUTEX_NORMAL) == 0
                     );
                     fatal_assert!(libc::pthread_mutex_init(lock.get(), &attr) == 0);
                     fatal_assert!(libc::pthread_mutexattr_destroy(&mut attr) == 0);
+
+                    let page = page as u64;
 
                     Barrier { lock, page, page_size }
                 }
@@ -293,11 +293,7 @@ mod linux {
 
         /// Returns `true` if the `mprotect`-based trick is supported.
         pub fn is_supported() -> bool {
-            if cfg!(target_arch = "x86") || cfg!(target_arch = "x86_64") {
-                true
-            } else {
-                false
-            }
+            cfg!(target_arch = "x86") || cfg!(target_arch = "x86_64")
         }
 
         /// Executes a heavy `mprotect`-based barrier.
@@ -340,7 +336,7 @@ mod linux {
 #[cfg(target_os = "windows")]
 mod windows {
     use core::sync::atomic;
-    use kernel32;
+    use windows_sys;
 
     /// Issues light memory barrier for fast path.
     ///
@@ -356,7 +352,7 @@ mod windows {
     #[inline]
     pub fn heavy() {
         unsafe {
-            kernel32::FlushProcessWriteBuffers();
+            windows_sys::Win32::System::Threading::FlushProcessWriteBuffers();
         }
     }
 }
