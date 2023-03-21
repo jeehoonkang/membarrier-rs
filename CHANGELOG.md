@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## 0.2.3 - 2023-03-22
+### Changed
+- Improve Windows support.
+
 ## 0.2.0 - 2018-11-14
 ### Added
 - Add support for `no_std`.

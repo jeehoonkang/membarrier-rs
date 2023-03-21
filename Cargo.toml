@@ -1,7 +1,7 @@
 [package]
 name = "membarrier"
-version = "0.2.2"
-authors = ["Jeehoon Kang <jeehoon.kang@sf.snu.ac.kr>"]
+version = "0.2.3"
+authors = ["Jeehoon Kang <jeehoon.kang@kaist.ac.kr>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/jeehoonkang/membarrier-rs"
@@ -13,6 +13,6 @@ categories = ["memory-management", "concurrency", "os", "no-std"]
 
 [dependencies]
 cfg-if = "1.0"
-lazy_static = "1.0"
+lazy_static = "1.4"
 libc = "0.2"
 windows-sys = { version = "0.45.0", features = ["Win32_System_Threading"] }
